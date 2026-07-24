@@ -17,6 +17,28 @@ jobs:
     name: Python quality
     runs-on: ubuntu-latest
 
+    env:
+      POSTGRES_DB: banking_intelligence_test
+      POSTGRES_USER: banking_admin
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+
+    services:
+      postgres:
+        image: postgres:18.4-bookworm
+        env:
+          POSTGRES_DB: banking_intelligence_test
+          POSTGRES_USER: banking_admin
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U banking_admin -d banking_intelligence_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -37,6 +59,9 @@ jobs:
 
       - name: Check Ruff formatting
         run: uv run ruff format . --check
+
+      - name: Apply database migrations
+        run: uv run alembic upgrade head
 
       - name: Run tests
         run: uv run pytest
