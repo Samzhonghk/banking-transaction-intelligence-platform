@@ -1186,6 +1186,43 @@ internal module layout to change later.
 - Repository-wide Ruff lint and formatting checks passed.
 - Both loaders imported successfully from `banking_intelligence.ingestion.loaders`.
 - `alembic check` reported no new upgrade operations.
+- GitHub Actions run `CI #3` passed on `main` for commit `e21342a`.
+- The remote job rebuilt the PostgreSQL schema from migrations and passed all
+  lint, formatting, unit, and integration checks.
+
+### 52. Trusted core account and transaction models
+
+**Completed work**
+
+- Added `core.accounts` with source-scoped external identity, currency,
+  optional API-enrichment attributes, timestamps, and source-system lineage.
+- Added `core.transactions` with precise numeric amounts, account and raw-record
+  lineage, source transaction identity, currency, description, and event time.
+- Added uniqueness, positive-amount, currency-format, status, foreign-key, and
+  deletion-restriction constraints.
+- Generated and applied Alembic revision `56c9489a66b2`.
+- Added a real PostgreSQL integration test for valid inserts, joins, numeric
+  precision, raw lineage, and negative-amount rejection.
+
+**Engineering role and meaning**
+
+The core schema separates validated business entities from immutable ingestion
+evidence. Surrogate account IDs isolate downstream tables from changing upstream
+identifiers, while source-scoped uniqueness prevents cross-system collisions.
+Each trusted transaction retains a direct link to its raw evidence. PostgreSQL
+`NUMERIC(18, 2)` and database constraints enforce financial precision and
+business invariants independently of Python validation.
+
+**Verification**
+
+- The core-model PostgreSQL integration test passed.
+- A stored amount round-tripped as `Decimal("100.50")`.
+- Account, transaction, and raw-record lineage joined correctly.
+- PostgreSQL rejected a negative transaction amount.
+- The complete test suite contained 15 passing tests.
+- Ruff lint and formatting checks passed.
+- `alembic check` reported no new upgrade operations.
+- `alembic current` reported `56c9489a66b2 (head)`.
 
 ## Delivery and learning split
 
@@ -1221,5 +1258,5 @@ does not write the workflow on the learner's behalf.
 
 ## Current step
 
-Commit and push the completed rejected-record persistence milestone, then begin
-the trusted `core` transaction model needed for accepted ETL output.
+Implement the accepted transaction loader with source-row lineage, account
+upsert behaviour, bulk trusted-transaction insertion, and idempotency.
