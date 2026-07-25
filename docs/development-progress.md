@@ -1100,8 +1100,92 @@ complete and deployable.
   integration test.
 - Repository-wide Ruff lint and formatting checks passed.
 - `alembic check` reported no new upgrade operations.
-- Remote GitHub Actions verification remains pending until the changes are
-  committed and pushed.
+- GitHub Actions run `CI #2` passed on `main` for commit `8c37238`.
+- The remote Ubuntu job started a disposable PostgreSQL service, applied the
+  complete migration chain, and passed Ruff plus all unit and integration tests.
+
+### 49. Rejected-record persistence model
+
+**Completed work**
+
+- Added the `RejectedRecord` SQLAlchemy model in the `ingestion` schema.
+- Linked each rejected record to exactly one raw transaction with a cascading
+  foreign key and a uniqueness constraint.
+- Stored one or more validation failures as a non-empty PostgreSQL JSONB array.
+- Generated and reviewed Alembic revision `4664633764ac`.
+- Applied the migration to the local PostgreSQL database.
+
+**Engineering role and meaning**
+
+Rejected data is retained as auditable pipeline output instead of being silently
+discarded. Referencing `raw_transactions` avoids duplicating the raw payload,
+ETL-run lineage, fingerprint, and source-row position. A JSONB array preserves
+multiple validation failures for the same record and supports later operational
+analysis of rejection patterns.
+
+**Verification**
+
+- The model imports successfully as `ingestion.rejected_records`.
+- Ruff lint and formatting checks passed.
+- The generated migration contained only the expected table and index changes.
+- `alembic upgrade head` completed successfully.
+- `alembic current` reported `4664633764ac (head)`.
+
+### 50. Rejected-record loader unit implementation
+
+**Completed work**
+
+- Added `load_rejected_records` with an empty-batch fast path.
+- Mapped retained pandas indexes to one-based source-row lineage.
+- Queried all required raw-transaction IDs in one SQL statement.
+- Added fail-fast detection when rejected rows cannot be matched to raw
+  transactions.
+- Converted semicolon-delimited validation output into non-empty JSONB reason
+  arrays and inserted the batch in one database call.
+- Added unit coverage for empty input, two-row bulk insertion, multiple reasons,
+  non-contiguous source rows, and missing lineage.
+
+**Engineering role and meaning**
+
+The loader preserves the relationship between validation failures and immutable
+raw evidence without duplicating payloads. One lookup query plus one bulk insert
+avoids an N+1 database pattern. Failing when lineage is incomplete prevents ETL
+counts from reporting success while rejected evidence is silently missing.
+Transaction ownership remains with the caller so the whole pipeline can commit
+or roll back atomically.
+
+**Verification**
+
+- All three rejected-record loader unit tests passed.
+- The complete test suite contained 13 passing tests.
+- Repository-wide Ruff lint and formatting checks passed.
+
+### 51. Rejected-record PostgreSQL integration verification
+
+**Completed work**
+
+- Added a real PostgreSQL integration test that creates source-system and ETL-run
+  lineage, persists two raw transactions, and rejects the second source row.
+- Queried `raw_transactions` and `rejected_records` with an explicit SQLAlchemy
+  join.
+- Verified that the rejected record points to source row 2 and that PostgreSQL
+  JSONB round-trips as a Python list containing both validation reasons.
+- Exported both loaders through the `ingestion.loaders` package interface.
+
+**Engineering role and meaning**
+
+The integration test proves behaviour that unit-test mocks cannot: live foreign
+keys, generated joins, JSONB serialization and deserialization, and transactional
+test cleanup. The package export provides a stable loader API while allowing the
+internal module layout to change later.
+
+**Verification**
+
+- The rejected-record PostgreSQL integration test passed.
+- The complete test suite contained 14 passing tests.
+- Repository-wide Ruff lint and formatting checks passed.
+- Both loaders imported successfully from `banking_intelligence.ingestion.loaders`.
+- `alembic check` reported no new upgrade operations.
 
 ## Delivery and learning split
 
@@ -1137,5 +1221,5 @@ does not write the workflow on the learner's behalf.
 
 ## Current step
 
-Commit and push the raw ingestion and PostgreSQL CI milestone, then verify the
-remote GitHub Actions run before continuing to rejected-record persistence.
+Commit and push the completed rejected-record persistence milestone, then begin
+the trusted `core` transaction model needed for accepted ETL output.
