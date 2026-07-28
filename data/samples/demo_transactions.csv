@@ -1,0 +1,12 @@
+transaction_id,account_id,amount,currency,description,transaction_timestamp
+TX-DEMO-001,ACC-DEMO-001,1250.50,NZD,Salary payment,2026-07-28T09:00:00Z
+TX-DEMO-002,ACC-DEMO-001,42.90, nzd ,Grocery store,2026-07-28T10:15:00Z
+TX-DEMO-003,ACC-DEMO-002,-10.00,NZD,Negative amount,2026-07-28T11:00:00Z
+,ACC-DEMO-003,15.00,NZD,Missing transaction ID,2026-07-28T11:10:00Z
+TX-DEMO-005, ,20.00,NZD,Missing account ID,2026-07-28T11:20:00Z
+TX-DEMO-006,ACC-DEMO-004,not-a-number,NZD,Invalid amount,2026-07-28T11:30:00Z
+TX-DEMO-007,ACC-DEMO-005,30.00,EUR,Unsupported currency,2026-07-28T11:40:00Z
+TX-DEMO-008,ACC-DEMO-006,40.00,NZD,Invalid timestamp,not-a-date
+TX-DEMO-009,ACC-DEMO-002,65.75,AUD,Coffee payment,2026-07-28T12:00:00Z
+TX-DEMO-010,ACC-DEMO-007,10.00,NZD,Duplicate one,2026-07-28T12:10:00Z
+TX-DEMO-010,ACC-DEMO-007,11.00,NZD,Duplicate two,2026-07-28T12:20:00Z

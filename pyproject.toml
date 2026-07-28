@@ -16,6 +16,9 @@ dependencies = [
     "sqlalchemy>=2.0.51",
 ]
 
+[project.scripts]
+banking-intelligence = "banking_intelligence.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
