@@ -1,7 +1,9 @@
 from pathlib import Path
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
+import requests
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.engine import Engine
 
@@ -16,6 +18,7 @@ from banking_intelligence.database.models import (
     Transaction,
 )
 from banking_intelligence.ingestion.pipelines import (
+    run_api_transaction_pipeline,
     run_csv_transaction_pipeline,
 )
 
@@ -162,6 +165,118 @@ def test_csv_transaction_pipeline_records_failure(
         assert missing_path.name in failed_run.error_message
     finally:
         with database_engine.begin() as connection:
+            connection.execute(
+                delete(EtlRun).where(EtlRun.source_system_id == source_system_id)
+            )
+            connection.execute(
+                delete(SourceSystem).where(SourceSystem.id == source_system_id)
+            )
+
+
+def test_api_transaction_pipeline_persists_paginated_outcomes(
+    database_engine: Engine,
+) -> None:
+    """Paginated HTTP records should use the shared PostgreSQL pipeline."""
+    with database_engine.begin() as connection:
+        source_system_id = connection.execute(
+            insert(SourceSystem)
+            .values(
+                name=f"pipeline-api-{uuid4()}",
+                source_type="api",
+                base_url="https://example.test/transactions",
+            )
+            .returning(SourceSystem.id)
+        ).scalar_one()
+
+    session = Mock(spec=requests.Session)
+    first_response = Mock(spec=requests.Response)
+    first_response.json.return_value = {
+        "data": [
+            {
+                "transaction_id": "API-TX001",
+                "account_id": "API-ACC001",
+                "amount": "80.50",
+                "currency": "nzd",
+                "description": "API payment",
+                "transaction_timestamp": "2026-07-30T09:00:00Z",
+            },
+            {
+                "transaction_id": "API-TX002",
+                "account_id": "API-ACC002",
+                "amount": "-5.00",
+                "currency": "NZD",
+                "description": "Invalid API payment",
+                "transaction_timestamp": "2026-07-30T09:05:00Z",
+            },
+        ],
+        "pagination": {
+            "page": 1,
+            "total_pages": 2,
+        },
+    }
+    second_response = Mock(spec=requests.Response)
+    second_response.json.return_value = {
+        "data": [
+            {
+                "transaction_id": "API-TX003",
+                "account_id": "API-ACC003",
+                "amount": "25.25",
+                "currency": "AUD",
+                "description": "Second page",
+                "transaction_timestamp": "2026-07-30T09:10:00Z",
+            }
+        ],
+        "pagination": {
+            "page": 2,
+            "total_pages": 2,
+        },
+    }
+    session.get.side_effect = [
+        first_response,
+        second_response,
+    ]
+
+    try:
+        etl_run_id = run_api_transaction_pipeline(
+            engine=database_engine,
+            url="https://example.test/transactions",
+            source_system_id=source_system_id,
+            session=session,
+            page_size=2,
+        )
+
+        with database_engine.connect() as connection:
+            etl_run = connection.execute(
+                select(
+                    EtlRun.status,
+                    EtlRun.extracted_count,
+                    EtlRun.accepted_count,
+                    EtlRun.rejected_count,
+                ).where(EtlRun.id == etl_run_id)
+            ).one()
+            raw_count = connection.scalar(
+                select(func.count())
+                .select_from(RawTransaction)
+                .where(RawTransaction.etl_run_id == etl_run_id)
+            )
+
+        assert etl_run.status == "succeeded"
+        assert etl_run.extracted_count == 3
+        assert etl_run.accepted_count == 2
+        assert etl_run.rejected_count == 1
+        assert raw_count == 3
+        assert session.get.call_count == 2
+    finally:
+        with database_engine.begin() as connection:
+            account_ids = select(Account.id).where(
+                Account.source_system_id == source_system_id
+            )
+            connection.execute(
+                delete(Transaction).where(Transaction.account_id.in_(account_ids))
+            )
+            connection.execute(
+                delete(Account).where(Account.source_system_id == source_system_id)
+            )
             connection.execute(
                 delete(EtlRun).where(EtlRun.source_system_id == source_system_id)
             )
