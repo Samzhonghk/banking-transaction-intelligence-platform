@@ -1,6 +1,6 @@
 import pytest
 
-from scripts.generate_demo_transactions import (
+from banking_intelligence.demo_data import (
     CURRENCIES,
     apply_invalid_case,
     generate_transaction_rows,
