@@ -12,6 +12,8 @@ from banking_intelligence.database.models import (
     Transaction,
 )
 
+TRANSACTION_INSERT_BATCH_SIZE = 5000
+
 
 def load_accepted_transactions(
     connection: Connection,
@@ -156,11 +158,23 @@ def load_accepted_transactions(
             }
         )
 
-    transaction_insert = pg_insert(Transaction).values(transaction_rows)
+    inserted_count = 0
+    for batch_start in range(
+        0,
+        len(transaction_rows),
+        TRANSACTION_INSERT_BATCH_SIZE,
+    ):
+        transaction_batch = transaction_rows[
+            batch_start : batch_start + TRANSACTION_INSERT_BATCH_SIZE
+        ]
 
-    transaction_load = transaction_insert.on_conflict_do_nothing(
-        constraint="uq_transactions_account_external_id"
-    ).returning(Transaction.id)
+        transaction_insert = pg_insert(Transaction).values(transaction_batch)
 
-    result = connection.execute(transaction_load)
-    return len(result.scalars().all())
+        transaction_load = transaction_insert.on_conflict_do_nothing(
+            constraint="uq_transactions_account_external_id"
+        ).returning(Transaction.id)
+
+        result = connection.execute(transaction_load)
+        inserted_count += len(result.scalars().all())
+
+    return inserted_count

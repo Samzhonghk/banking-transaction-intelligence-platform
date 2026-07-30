@@ -2,9 +2,11 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pandas as pd
+import pytest
 from sqlalchemy import insert, select
 from sqlalchemy.engine import Connection
 
+import banking_intelligence.ingestion.loaders.accepted_transactions as accepted_loader
 from banking_intelligence.database.models import (
     Account,
     EtlRun,
@@ -26,8 +28,15 @@ from banking_intelligence.ingestion.validators.transactions import (
 
 def test_load_accepted_transactions_is_idempotent(
     database_connection: Connection,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Accepted rows should retain lineage and remain unique across reruns."""
+    monkeypatch.setattr(
+        accepted_loader,
+        "TRANSACTION_INSERT_BATCH_SIZE",
+        1,
+    )
+
     source_system_id = database_connection.execute(
         insert(SourceSystem)
         .values(
