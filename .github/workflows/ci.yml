@@ -63,6 +63,9 @@ jobs:
       - name: Apply database migrations
         run: uv run alembic upgrade head
 
+      - name: Build dbt warehouse
+        run: uv run dbt build --project-dir warehouse --profiles-dir warehouse
+
       - name: Run tests
         run: uv run pytest
 

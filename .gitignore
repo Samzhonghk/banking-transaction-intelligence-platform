@@ -13,3 +13,9 @@ build/
 dist/
 *.egg-info/
 data/generated/*.csv
+
+#dbt generated artifacts
+warehouse/target/
+warehouse/logs/
+warehouse/dbt_packages/
+warehouse/.user.yml

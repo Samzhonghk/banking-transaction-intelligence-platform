@@ -1,0 +1,14 @@
+version: 2
+sources:
+  - name: core
+    description: Trusted banking data produced by the Python ingestion pipeline.
+    database: "{{ env_var('POSTGRES_DB') }}"
+    schema: core
+
+    tables:
+      - name: accounts
+        description: Trusted banking accounts referenced by accepted transactions.
+
+      - name: transactions
+        description: Validated and accepted banking transactions
+      

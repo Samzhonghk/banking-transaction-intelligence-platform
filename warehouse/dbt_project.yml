@@ -1,0 +1,16 @@
+name: banking_intelligence_warehouse
+version: "1.0.0"
+config-version: 2
+
+profile: banking_intelligence_warehouse
+
+model-paths:
+  - models
+
+models:
+  banking_intelligence_warehouse:
+    staging:
+      +materialized: view
+
+    marts:
+      +materialized: table

@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: stg_core__accounts
+    description: Clean account records sourced from the trusted core schema.
+
+    columns:
+      - name: account_id
+        description: Internal identifier for one trusted account.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: source_system_id
+        description: Identifier of the upstream source system.
+        data_tests:
+          - not_null
+
+      - name: external_account_id
+        description: Account identifier supplied by the upstream system.
+        data_tests:
+          - not_null
+
+      - name: currency_code
+        description: Three-letter account currency code.
+        data_tests:
+          - not_null
+
+  - name: stg_core__transactions
+    description: Clean transaction records sourced from the trusted core schema.
+
+    columns:
+      - name: transaction_id
+        description: Internal identifier for one trusted transaction.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: raw_transaction_id
+        description: Identifier of the raw record that produced this transaction.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: account_id
+        description: Trusted account associated with the transaction.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref("stg_core__accounts")
+                field: account_id
+
+      - name: external_transaction_id
+        data_tests:
+          - not_null
+
+      - name: amount
+        data_tests:
+          - not_null
+
+      - name: currency_code
+        data_tests:
+          - not_null
+
+      - name: transaction_timestamp
+        data_tests:
+          - not_null

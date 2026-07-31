@@ -1,0 +1,52 @@
+version: 2
+models:
+  - name: fct_transactions
+    description: Transaction fact table with one row per accepted transaction.
+
+    columns:
+      - name: transaction_key
+        description: Stable warehouse key for one transaction.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: transaction_id
+        description: Operational transaction identifier retained for lineage.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: raw_transaction_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: account_key
+        description: Warehouse key referencing the account dimension.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref("dim_accounts")
+                field: account_key
+
+      - name: external_transaction_id
+        data_tests:
+          - not_null
+
+      - name: amount
+        description: Positive transaction amount.
+        data_tests:
+          - not_null
+
+      - name: currency_code
+        data_tests:
+          - not_null
+
+      - name: transaction_timestamp
+        data_tests:
+          - not_null
+
+      - name: transaction_date
+        data_tests:
+          - not_null

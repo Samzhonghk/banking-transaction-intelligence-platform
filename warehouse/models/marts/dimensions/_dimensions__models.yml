@@ -1,0 +1,45 @@
+version: 2
+
+models:
+  - name: dim_accounts
+    description: Account dimension with one row per trusted banking account.
+
+    columns:
+      - name: account_key
+        description: Stable warehouse key generated from the source and external account identifiers.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: account_id
+        description: Operational account identifier retained for lineage.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: source_system_id
+        data_tests:
+          - not_null
+
+      - name: external_account_id
+        data_tests:
+          - not_null
+
+      - name: currency_code
+        data_tests:
+          - not_null
+
+      - name: account_type
+        data_tests:
+          - not_null
+
+      - name: account_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - active
+                  - frozen
+                  - closed
+                  - unknown

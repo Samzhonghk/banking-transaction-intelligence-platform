@@ -1,0 +1,44 @@
+version: 2
+
+models:
+  - name: mart_daily_transaction_summary
+    description: Daily transaction metrics grouped by date and currency.
+
+    columns:
+      - name: daily_summary_key
+        description: Stable key representing one transaction date and currency.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: transaction_date
+        data_tests:
+          - not_null
+
+      - name: currency_code
+        data_tests:
+          - not_null
+
+      - name: transaction_count
+        data_tests:
+          - not_null
+
+      - name: active_account_count
+        data_tests:
+          - not_null
+
+      - name: total_amount
+        data_tests:
+          - not_null
+
+      - name: average_amount
+        data_tests:
+          - not_null
+
+      - name: minimum_amount
+        data_tests:
+          - not_null
+
+      - name: maximum_amount
+        data_tests:
+          - not_null
