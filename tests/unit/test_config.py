@@ -13,6 +13,7 @@ def test_settings_loads_values_from_environment(
     monkeypatch.setenv("POSTGRES_PASSWORD", "test_password")
     monkeypatch.setenv("POSTGRES_HOST", "test_host")
     monkeypatch.setenv("POSTGRES_PORT", "6543")
+    monkeypatch.setenv("PLATFORM_API_KEY", "test-platform-api-key")
 
     settings = Settings(_env_file=None)
 
@@ -21,6 +22,7 @@ def test_settings_loads_values_from_environment(
     assert settings.postgres_password.get_secret_value() == "test_password"
     assert settings.postgres_host == "test_host"
     assert settings.postgres_port == 6543
+    assert settings.platform_api_key.get_secret_value() == "test-platform-api-key"
 
 
 def test_database_url_contains_expected_components() -> None:
@@ -33,6 +35,7 @@ def test_database_url_contains_expected_components() -> None:
         postgres_password="test_password",
         postgres_host="test_host",
         postgres_port=6543,
+        platform_api_key="test-platform-api-key",
     )
 
     database_url = settings.database_url

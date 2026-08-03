@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     transaction_api_token: SecretStr | None = None
+    platform_api_key: SecretStr
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -545,3 +545,212 @@ consistent and provides controlled upgrade and rollback paths. I still use
 direct SQL for dbt transformations, analytics, data-quality checks, and database-
 specific features that are clearer or safer to express explicitly.
 ```
+
+## 15. Recent implementation questions and engineering concepts
+
+### Python control flow and compact syntax
+
+- `try/except` handles an error; `try/finally` guarantees cleanup whether the
+  operation succeeds, fails, or returns early. Database connections and HTTP
+  sessions therefore belong in `finally` cleanup or a context manager.
+- A comprehension writes the produced value first and the loop second, for
+  example `{row.external_account_id: row.currency_code for row in rows}`. A
+  normal `for` loop is equivalent and is often clearer when the transformation
+  needs several steps.
+- `lambda: extract_api_transactions(...)` creates a zero-argument callable but
+  does not call the API immediately. The pipeline invokes `extractor()` after it
+  has created an ETL-run audit record, so extraction failures can be recorded.
+- SQLAlchemy `one_or_none()` returns a complete result row or `None`.
+  `scalar_one_or_none()` returns the first selected value or `None`. Both raise
+  an error if more than one row is returned.
+
+### CLI subcommands
+
+`argparse.add_argument()` adds input to the current command. Subparsers create
+separate commands, each with its own valid arguments:
+
+```text
+banking-intelligence ingest-csv <file> --source-name demo-csv
+banking-intelligence ingest-api --source-name demo-api
+```
+
+This prevents CSV-only input such as `file_path` from being accepted by the API
+command. The selected command determines the required source type, but CSV and
+API sources remain separate rows in `ingestion.source_systems`.
+
+### ETL runs, source systems, and lineage
+
+One source system can have many ETL runs. `etl_runs.source_system_id` identifies
+where a particular execution obtained its data. Raw, rejected, and accepted
+records then retain links to that run and to their original source row.
+
+Lineage lookup uses `(etl_run_id, source_row_number)` to locate the unique
+`RawTransaction.id`. Missing or duplicate matches must fail rather than select
+an arbitrary row, because an ambiguous link makes audit and replay results
+unreliable.
+
+DataFrame indexes currently map to one-based source row numbers using
+`index + 1`. An explicit `source_row_number` column is safer for a mature
+pipeline because filtering and index resets cannot silently destroy lineage.
+
+### Reliable API ingestion
+
+`requests.Session` reuses connections and centralises headers and retry policy.
+The retry policy allows safe `GET` requests to retry transient HTTP status codes
+such as `429`, `500`, `502`, `503`, and `504`. These are HTTP response codes, not
+TCP codes. Connection and read failures are separate retry categories.
+
+Important controls are:
+
+- connect and read timeouts so a pipeline cannot wait forever;
+- exponential backoff to avoid repeatedly attacking an unhealthy service;
+- `Retry-After` support for server-side rate limiting;
+- pagination so the pipeline does not silently load only the first page;
+- JSON structure validation before records enter pandas or PostgreSQL;
+- a maximum-page guard to stop malformed pagination from creating an infinite
+  loop.
+
+`records.extend(payload["data"])` appends every record from one response page
+to the combined flat list. `append()` would instead add the page list as one
+nested element.
+
+An optional `SecretStr` API token is unwrapped only when constructing the
+request header:
+
+```text
+Authorization: Bearer <token>
+```
+
+The token must not be logged. The API pipeline runs before `session.close()`;
+the close operation belongs in `finally` so connections are released after
+either success or failure.
+
+### PostgreSQL bulk-insert batching
+
+PostgreSQL's extended query protocol limits one statement to 65,535 bind
+parameters. The limit is not a row-count limit. Ten thousand transaction rows
+with seven bound columns require 70,000 parameters, so they cannot be sent in
+one generated multi-value `INSERT`.
+
+The loader slices `transaction_rows` into bounded batches, inserts each batch,
+uses `ON CONFLICT DO NOTHING` for idempotency, and accumulates the identifiers
+returned by `RETURNING`. If all batches share the caller-managed transaction, a
+later failure still rolls back the complete ETL operation.
+
+### dbt's role and warehouse modelling
+
+dbt is not a data warehouse. PostgreSQL, Snowflake, or BigQuery stores and
+computes the data; dbt organises, executes, tests, documents, and versions the
+SQL transformations inside that platform. Direct SQL can perform the same
+calculation, while dbt adds dependency management, environments, tests,
+documentation, lineage, and repeatable CI execution.
+
+`source()` introduces an external relation into the dbt graph. `ref()` declares
+dependencies between dbt models. dbt uses those edges to build the DAG and
+topologically order execution; independent branches may run concurrently.
+
+The project materialises staging models as views because they are lightweight
+source-aligned transformations. Marts are tables because they apply trusted
+business rules and support repeated API, BI, and reporting queries. Staging can
+technically be aggregated directly, but marts provide one consistent business
+interpretation and generally faster reads.
+
+Model grain states what one row represents. For example, a daily mart with one
+row per transaction date must not contain the same date twice. If the grain is
+date plus account, that column combination must be unique.
+
+A deterministic warehouse key can be generated from the complete business key:
+
+```sql
+md5(cast(source_system_id as text) || '|' || external_account_id)
+```
+
+The delimiter prevents ambiguous concatenation, and including the source keeps
+identical external IDs from different systems distinct. MD5 here creates a
+stable identifier; it is not being used for password security.
+
+dbt model YAML documents models and columns and adds tests such as `not_null`,
+`unique`, and `accepted_values`. These tests detect invalid analytical data and
+fail the build; unlike PostgreSQL constraints, they do not block each individual
+operational write.
+
+### dbt environments and user interfaces
+
+One `profiles.yml` profile can define `dev`, `sit`, `uat`, and `prod` outputs.
+The default `target: dev` protects normal local development, while commands such
+as `dbt build --target uat` select another configured connection. Credentials
+must come from environment variables or a secret manager, and production should
+use a restricted service account rather than a developer credential.
+
+dbt Core is primarily CLI- and code-driven, with generated documentation and
+lineage pages. Teams that use the dbt platform also use its web UI for IDE work,
+job scheduling, run history, logs, Catalog, and lineage. Other teams combine dbt
+Core with VS Code, GitHub Actions, and an orchestrator UI such as Airflow.
+
+### Hadoop and Hive learning priority for NZ/AU roles
+
+Hadoop and Hive remain relevant in legacy enterprise estates and migration
+programmes, especially in banking, telecommunications, government, and large
+consultancies. Newer platforms more often separate cloud object storage from
+managed compute and use Spark, Databricks, Delta Lake, Snowflake, BigQuery, or
+Microsoft Fabric.
+
+For a junior/intermediate portfolio, hands-on PySpark and Databricks skills have
+higher priority than administering an on-premises Hadoop cluster. Candidates
+should still explain HDFS, MapReduce, YARN, Hive tables, partitioning, the Hive
+Metastore, and how these concepts carry into modern lakehouse platforms.
+
+### API query layering and pagination trade-offs
+
+A production API commonly separates transaction querying into four roles:
+
+- the FastAPI route handles authentication, HTTP query parameters, status
+  codes, and response construction;
+- a query/service function builds and executes database queries;
+- SQLAlchemy models describe operational database tables;
+- Pydantic schemas define the smaller, stable public response contract.
+
+This prevents route functions from accumulating authentication, validation,
+SQL, error handling, and response conversion in one place. It also prevents
+internal fields such as raw-record lineage from being exposed merely because
+they were added to an ORM model.
+
+The first transaction API version uses deterministic offset pagination:
+
+```sql
+ORDER BY transaction_timestamp DESC, id DESC
+LIMIT :limit OFFSET :offset
+```
+
+Ordering by timestamp and ID makes the result stable when multiple rows share
+the same timestamp. Offset pagination is straightforward for clients and is a
+reasonable production choice for small and medium datasets or shallow page
+navigation.
+
+Deep offsets become increasingly expensive because PostgreSQL still has to
+locate and skip preceding rows. At larger scale, the endpoint can move to
+keyset (cursor) pagination:
+
+```sql
+WHERE (transaction_timestamp, id) < (:last_timestamp, :last_id)
+ORDER BY transaction_timestamp DESC, id DESC
+LIMIT :limit
+```
+
+Keyset pagination performs consistently for deep navigation but does not offer
+arbitrary page-number jumps as naturally. Similarly, an exact `COUNT(*)` is
+useful for conventional UI pagination but may become expensive on very large
+tables. High-volume APIs may omit the total, cache it, calculate it
+asynchronously, use an estimate, or return only `has_more` and a next cursor.
+
+The portfolio deliberately starts with offset pagination and an exact total,
+while documenting keyset pagination and count strategies as the scalability
+path. Choosing the simplest design that meets current volume, and explaining
+when to evolve it, reflects real engineering judgement.
+
+### Ruff lint
+
+`uv run ruff check .` statically checks Python code for unused imports,
+incorrect import order, suspicious constructs, and configured style rules.
+`uv run ruff format .` formats layout. CI runs both so inconsistent or
+problematic code cannot be merged unnoticed.

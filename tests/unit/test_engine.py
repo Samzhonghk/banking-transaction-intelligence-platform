@@ -13,6 +13,7 @@ def test_create_database_engine_uses_settings() -> None:
         postgres_password="test_password",
         postgres_host="test_host",
         postgres_port=6543,
+        platform_api_key="test-platform-api-key",
     )
 
     engine = create_database_engine(settings)
