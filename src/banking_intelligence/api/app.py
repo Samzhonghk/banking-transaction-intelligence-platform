@@ -3,8 +3,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from banking_intelligence.api.routes.analytics import router as analytics_router
 from banking_intelligence.api.routes.health import router as health_router
 from banking_intelligence.api.routes.readiness import router as readiness_router
+from banking_intelligence.api.routes.risk import router as risk_router
 from banking_intelligence.api.routes.transactions import router as transactions_router
 from banking_intelligence.core.config import Settings
 from banking_intelligence.database.engine import create_database_engine
@@ -37,6 +39,9 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(readiness_router)
     app.include_router(transactions_router)
+    app.include_router(analytics_router)
+    app.include_router(risk_router)
+
     return app
 
 

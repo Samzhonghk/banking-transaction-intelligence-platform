@@ -47,6 +47,23 @@ def test_build_parser_parses_api_ingestion_arguments() -> None:
     assert args.pipeline_name == "partner-api-manual"
 
 
+def test_build_parser_parses_risk_evaluation_arguments() -> None:
+    """The CLI should expose the rule and batch inputs for risk evaluation."""
+    args = cli.build_parser().parse_args(
+        [
+            "evaluate-risk",
+            "--rule-id",
+            "17",
+            "--batch-size",
+            "500",
+        ]
+    )
+
+    assert args.command == "evaluate-risk"
+    assert args.rule_id == 17
+    assert args.batch_size == 500
+
+
 def test_main_runs_pipeline_and_disposes_engine(
     monkeypatch,
     capsys,
@@ -157,3 +174,56 @@ def test_main_runs_authenticated_api_pipeline_and_closes_session(
     session.close.assert_called_once_with()
     engine.dispose.assert_called_once_with()
     assert "ETL run 92 completed successfully" in capsys.readouterr().out
+
+
+def test_main_runs_risk_pipeline_in_transaction(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The risk command should run transactionally and report its metrics."""
+    engine = MagicMock(spec=Engine)
+    connection = MagicMock(spec=Connection)
+    engine.begin.return_value.__enter__.return_value = connection
+    pipeline = Mock(
+        return_value={
+            "evaluated_count": 2500,
+            "inserted_result_count": 2500,
+            "inserted_alert_count": 125,
+        }
+    )
+
+    monkeypatch.setattr(cli, "Settings", Mock(return_value=sentinel.settings))
+    monkeypatch.setattr(
+        cli,
+        "create_database_engine",
+        Mock(return_value=engine),
+    )
+    monkeypatch.setattr(cli, "run_high_amount_risk_pipeline", pipeline)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "banking-intelligence",
+            "evaluate-risk",
+            "--rule-id",
+            "17",
+            "--batch-size",
+            "500",
+        ],
+    )
+
+    exit_code = cli.main()
+
+    assert exit_code == 0
+    pipeline.assert_called_once_with(
+        connection=connection,
+        risk_rule_id=17,
+        batch_size=500,
+    )
+    engine.begin.assert_called_once_with()
+    engine.connect.assert_not_called()
+    engine.dispose.assert_called_once_with()
+    assert (
+        "Risk evaluation completed: evaluated=2500, "
+        "inserted_results=2500, inserted_alerts=125" in capsys.readouterr().out
+    )
