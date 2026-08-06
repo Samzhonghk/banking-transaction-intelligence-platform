@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     transaction_api_token: SecretStr | None = None
     platform_api_key: SecretStr
+    log_level: str = "INFO"
 
     model_config = SettingsConfigDict(
         env_file=".env",

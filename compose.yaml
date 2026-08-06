@@ -63,6 +63,7 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       PLATFORM_API_KEY: ${PLATFORM_API_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
     ports:
       - "${API_PORT:-8000}:8000"
