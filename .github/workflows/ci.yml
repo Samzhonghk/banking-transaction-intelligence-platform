@@ -70,3 +70,12 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+
+      - name: Build API Docker image
+        run: docker build --tag banking-intelligence-api:ci .
+
+      - name: Smoke test API Docker image
+        run: docker run --rm banking-intelligence-api:ci python -c "import banking_intelligence"
+

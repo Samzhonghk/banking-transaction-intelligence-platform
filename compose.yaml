@@ -25,5 +25,66 @@ services:
       retries: 5
       start_period: 10s
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: banking-intelligence-api:dev
+    restart: "no"
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      PLATFORM_API_KEY: ${PLATFORM_API_KEY}
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    command: ["alembic", "upgrade", "head"]
+
+
+
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: banking-intelligence-api:dev
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      PLATFORM_API_KEY: ${PLATFORM_API_KEY}
+
+    ports:
+      - "${API_PORT:-8000}:8000"
+
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   postgres_data:
