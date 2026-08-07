@@ -3,6 +3,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from banking_intelligence.bootstrap import bootstrap_demo_configuration
 from banking_intelligence.core.config import Settings
 from banking_intelligence.database.engine import create_database_engine
 from banking_intelligence.database.models import SourceSystem
@@ -26,6 +27,11 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(
         dest="command",
         required=True,
+    )
+
+    subparsers.add_parser(
+        "bootstrap-demo-config",
+        help="Create or refresh configuration required by the demo workflow.",
     )
 
     ingest_parser = subparsers.add_parser(
@@ -105,6 +111,17 @@ def main() -> int:
     engine = create_database_engine(settings)
 
     try:
+        if args.command == "bootstrap-demo-config":
+            with engine.begin() as connection:
+                identifiers = bootstrap_demo_configuration(connection)
+
+            print(
+                "Demo configuration ready: "
+                f"source_system_id={identifiers['source_system_id']}, "
+                f"risk_rule_id={identifiers['risk_rule_id']}"
+            )
+            return 0
+
         if args.command == "evaluate-risk":
             with engine.begin() as connection:
                 metrics = run_high_amount_risk_pipeline(

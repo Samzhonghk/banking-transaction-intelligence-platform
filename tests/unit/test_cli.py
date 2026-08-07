@@ -64,6 +64,13 @@ def test_build_parser_parses_risk_evaluation_arguments() -> None:
     assert args.batch_size == 500
 
 
+def test_build_parser_parses_demo_bootstrap_command() -> None:
+    """The CLI should expose the deployment configuration bootstrap."""
+    args = cli.build_parser().parse_args(["bootstrap-demo-config"])
+
+    assert args.command == "bootstrap-demo-config"
+
+
 def test_main_runs_pipeline_and_disposes_engine(
     monkeypatch,
     capsys,
@@ -226,4 +233,45 @@ def test_main_runs_risk_pipeline_in_transaction(
     assert (
         "Risk evaluation completed: evaluated=2500, "
         "inserted_results=2500, inserted_alerts=125" in capsys.readouterr().out
+    )
+
+
+def test_main_bootstraps_demo_configuration_in_transaction(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The bootstrap command should commit both upserts as one transaction."""
+    engine = MagicMock(spec=Engine)
+    connection = MagicMock(spec=Connection)
+    engine.begin.return_value.__enter__.return_value = connection
+    bootstrap = Mock(
+        return_value={
+            "source_system_id": 17,
+            "risk_rule_id": 23,
+        }
+    )
+
+    monkeypatch.setattr(cli, "Settings", Mock(return_value=sentinel.settings))
+    monkeypatch.setattr(
+        cli,
+        "create_database_engine",
+        Mock(return_value=engine),
+    )
+    monkeypatch.setattr(cli, "bootstrap_demo_configuration", bootstrap)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["banking-intelligence", "bootstrap-demo-config"],
+    )
+
+    exit_code = cli.main()
+
+    assert exit_code == 0
+    bootstrap.assert_called_once_with(connection)
+    engine.begin.assert_called_once_with()
+    engine.connect.assert_not_called()
+    engine.dispose.assert_called_once_with()
+    assert (
+        "Demo configuration ready: source_system_id=17, risk_rule_id=23"
+        in capsys.readouterr().out
     )

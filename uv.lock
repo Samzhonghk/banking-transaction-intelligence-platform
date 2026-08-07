@@ -107,10 +107,12 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "dbt-postgres" },
     { name = "httpx2" },
     { name = "pytest" },
     { name = "ruff" },
+]
+etl = [
+    { name = "dbt-postgres" },
 ]
 
 [package.metadata]
@@ -127,11 +129,11 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "dbt-postgres", specifier = ">=1.11,<1.12" },
     { name = "httpx2", specifier = ">=2.9.1" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.15.21" },
 ]
+etl = [{ name = "dbt-postgres", specifier = ">=1.11,<1.12" }]
 
 [[package]]
 name = "certifi"

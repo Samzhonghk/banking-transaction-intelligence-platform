@@ -21,6 +21,7 @@ dependencies = [
 
 [project.scripts]
 banking-intelligence = "banking_intelligence.cli:main"
+banking-intelligence-demo-job = "banking_intelligence.jobs.demo_etl:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -37,8 +38,10 @@ target-version = "py313"
 select = ["E", "F", "I", "B", "UP"]
 
 [dependency-groups]
-dev = [
+etl = [
     "dbt-postgres>=1.11,<1.12",
+]
+dev = [
     "httpx2>=2.9.1",
     "pytest>=9.1.1",
     "ruff>=0.15.21",
