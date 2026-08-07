@@ -20,3 +20,6 @@ warehouse/target/
 warehouse/logs/
 warehouse/dbt_packages/
 warehouse/.user.yml
+
+# Airflow runtime artifacts
+orchestration/airflow/logs/
