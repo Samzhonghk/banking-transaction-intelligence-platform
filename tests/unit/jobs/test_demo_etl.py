@@ -15,18 +15,19 @@ def test_run_demo_etl_job_runs_each_stage_in_order(monkeypatch) -> None:
 
     bootstrap = Mock(
         side_effect=lambda _: (
-            events.append("bootstrap")
-            or {"source_system_id": 17, "risk_rule_id": 23}
+            events.append("bootstrap") or {"source_system_id": 17, "risk_rule_id": 23}
         )
     )
     ingest = Mock(side_effect=lambda **_: events.append("ingest") or 31)
     risk = Mock(
-        side_effect=lambda **_: events.append("risk")
-        or {
-            "evaluated_count": 11,
-            "inserted_result_count": 11,
-            "inserted_alert_count": 2,
-        }
+        side_effect=lambda **_: (
+            events.append("risk")
+            or {
+                "evaluated_count": 11,
+                "inserted_result_count": 11,
+                "inserted_alert_count": 2,
+            }
+        )
     )
     dbt_run = Mock(side_effect=lambda *_, **__: events.append("dbt"))
 

@@ -26,9 +26,7 @@ def test_bootstrap_demo_configuration_upserts_and_returns_ids() -> None:
     assert connection.execute.call_count == 2
 
     source_statement = connection.execute.call_args_list[0].args[0]
-    source_sql = str(
-        source_statement.compile(dialect=postgresql.dialect())
-    )
+    source_sql = str(source_statement.compile(dialect=postgresql.dialect()))
     assert "ON CONFLICT (name) DO UPDATE" in source_sql
     assert "RETURNING ingestion.source_systems.id" in source_sql
 
