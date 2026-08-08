@@ -16,7 +16,7 @@ permissions:
 
 
 env:
-  AZURE_CLIENT_ID: a4c770f0-59d7-43a9-b62e-ef311e1c84e3
+  AZURE_CLIENT_ID: cbbf7ab9-2f35-4112-903f-7d32bfe1ccf8
   AZURE_TENANT_ID: a53d8e71-eadd-4446-88d4-3d430c3a2610
   AZURE_SUBSCRIPTION_ID: 8221ad88-d898-45f7-8732-1c5337f31a3a
   RESOURCE_GROUP: rg-banking-intelligence-dev
