@@ -16,6 +16,9 @@ permissions:
 
 
 env:
+  AZURE_CLIENT_ID: a4c770f0-59d7-43a9-b62e-ef311e1c84e3
+  AZURE_TENANT_ID: a53d8e71-eadd-4446-88d4-3d430c3a2610
+  AZURE_SUBSCRIPTION_ID: 8221ad88-d898-45f7-8732-1c5337f31a3a
   RESOURCE_GROUP: rg-banking-intelligence-dev
   ACR_NAME: bankingintelligencenzdev
   ACR_LOGIN_SERVER: bankingintelligencenzdev.azurecr.io
@@ -47,9 +50,9 @@ jobs:
       - name: Log in to Azure with OIDC
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID}}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Log in to Azure Container Registry
         run: az acr login --name "$ACR_NAME"
