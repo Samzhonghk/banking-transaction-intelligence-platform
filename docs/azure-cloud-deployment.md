@@ -9,7 +9,7 @@ This project uses a hybrid deployment model:
 - Azure Container Apps hosts the public FastAPI service.
 - Azure Database for PostgreSQL Flexible Server stores application data.
 - Azure Container Registry (ACR) stores versioned Docker images.
-- GitHub Actions currently provides CI; automated cloud deployment (CD) is still pending.
+- GitHub Actions provides tested CI followed by automated Azure CD.
 - Airflow remains in local Docker Compose as an orchestration demonstration.
 - An Azure Container Apps scheduled Job runs the cloud ETL workflow without hosting the full Airflow stack in Azure.
 
@@ -66,7 +66,7 @@ Local Docker Compose
 | ACR permission | `AcrPull` on the registry | Assigned |
 | Container App | `ca-banking-intelligence-api-dev` | Created |
 | Public endpoint verification | Health, readiness, authenticated query, and logs | Complete |
-| Automated CD | GitHub Actions deployment workflow | Pending |
+| Automated CD | GitHub Actions deployment workflow | Complete; run `31242758472` succeeded |
 | Manual cloud ETL Job | `job-banking-etl-dev` | Complete and idempotency-tested |
 | Scheduled cloud ETL Job | `job-banking-etl-scheduled-dev` | Complete; daily at `0 14 * * *` UTC |
 
@@ -243,7 +243,7 @@ The first execution status was subsequently verified as `Succeeded`. It ran from
 
 The Scheduled Container Apps Job `job-banking-etl-scheduled-dev` was then created successfully from the same immutable ETL image, `banking-intelligence-etl:2212fc4`. It reuses the user-assigned managed identity for ACR access and has its own Job-scoped references to the PostgreSQL password and platform API key. Its cron expression is `0 14 * * *`, so Azure starts it daily at 14:00 UTC. This corresponds to approximately 02:00 in Auckland during NZST and 03:00 during NZDT; accepting this daylight-saving shift keeps the schedule simple and UTC-based. The already-tested Manual Job remains available for smoke tests and controlled backfills.
 
-The core GitHub Actions CD workflow is now implemented in `.github/workflows/cd.yml`. It waits for a successful `CI` run on `main` (or a manual dispatch), checks out the tested revision, derives a Git-SHA image tag, authenticates with Azure OIDC, builds and pushes the API and ETL images, and updates the existing API Container App plus both ETL Jobs. It intentionally does not start either Job or recreate their trigger configuration. The deployment principal is the dedicated Microsoft Entra application `app-banking-intelligence-cd-dev`, following the standard GitHub-to-Azure workload identity pattern. No client secret was created. Its service principal has `AcrPush` on the registry plus `Container Apps Contributor` and `Container Apps Jobs Contributor` at the project resource-group scope. The `github-main-immutable` federated credential trusts only OIDC tokens issued for this repository's `main` branch and the Azure token-exchange audience. The client, tenant, and subscription IDs are non-secret identifiers stored explicitly in the workflow; authentication still requires GitHub's short-lived signed OIDC token. The initial `AADSTS700213` failures were ultimately traced to a one-digit transcription error in the immutable GitHub owner ID: the Azure subject contained `155221180`, while the token contained `15522180`. The public GitHub Check Runs annotations exposed the complete unmasked value and allowed the federation to be corrected precisely.
+The core GitHub Actions CD workflow is now implemented in `.github/workflows/cd.yml`. It waits for a successful `CI` run on `main` (or a manual dispatch), checks out the tested revision, derives a Git-SHA image tag, authenticates with Azure OIDC, builds and pushes the API and ETL images, and updates the existing API Container App plus both ETL Jobs. It intentionally does not start either Job or recreate their trigger configuration. The deployment principal is the dedicated Microsoft Entra application `app-banking-intelligence-cd-dev`, following the standard GitHub-to-Azure workload identity pattern. No client secret was created. Its service principal has `AcrPush` on the registry plus `Container Apps Contributor` and `Container Apps Jobs Contributor` at the project resource-group scope. The `github-main-immutable` federated credential trusts only OIDC tokens issued for this repository's `main` branch and the Azure token-exchange audience. The client, tenant, and subscription IDs are non-secret identifiers stored explicitly in the workflow; authentication still requires GitHub's short-lived signed OIDC token. The initial `AADSTS700213` failures were ultimately traced to a one-digit transcription error in the immutable GitHub owner ID: the Azure subject contained `155221180`, while the token contained `15522180`. The public GitHub Check Runs annotations exposed the complete unmasked value and allowed the federation to be corrected precisely. The workflow also uses the supported `azure/login@v3` release rather than the maintenance-only v2 release. CD run `31242758472` then succeeded end to end: OIDC login, ACR login, both Docker builds and pushes, the API update, and both ETL Job updates all passed. Azure showed all three workloads using Git-SHA tag `337d865`; the public API subsequently returned `ok` from `/health` and `ready` from `/ready`.
 
 ## 5. Difficulties encountered and what they taught
 
@@ -330,9 +330,8 @@ Lesson: compare machine-readable claim values rather than transcribing wrapped s
 
 ### Required to finish the portfolio deployment
 
-1. Commit the CD workflow and complete the first successful `CI -> CD` run.
-2. Add deployment and rollback instructions to the main README.
-3. Perform final end-to-end acceptance and clean up Azure resources when the demo is no longer needed.
+1. Add deployment and rollback instructions to the main README.
+2. Perform final end-to-end acceptance and clean up Azure resources when the demo is no longer needed.
 
 The PostgreSQL administrator password rotation remains a known security action but was explicitly deferred on 2026-08-08. It must be completed before treating the environment as production-like or sharing further terminal screenshots.
 
@@ -360,4 +359,4 @@ The PostgreSQL administrator password rotation remains a known security action b
 
 ## 9. Resume point
 
-The public FastAPI deployment and cloud ETL path are complete. The Manual Job succeeded twice and demonstrated end-to-end idempotency; the Scheduled Job now runs daily at 14:00 UTC. Do not recreate these resources. The core CD workflow, dedicated Entra application, Azure RBAC roles, GitHub immutable `main` federation, and non-secret Azure identifiers are configured. The next step is completing the first successful `CI -> CD` run after federation propagation. PostgreSQL password rotation is explicitly deferred but remains documented as a security action.
+The public FastAPI deployment, cloud ETL path, and automated GitHub Actions CD are complete. The Manual Job succeeded twice and demonstrated end-to-end idempotency; the Scheduled Job runs daily at 14:00 UTC. CD run `31242758472` deployed Git-SHA tag `337d865` to the API and both Jobs, and the public health/readiness checks passed afterward. Do not recreate these resources. The next core task is adding concise deployment and rollback guidance to the main README, followed by final portfolio acceptance. PostgreSQL password rotation is explicitly deferred but remains documented as a security action.
