@@ -1,0 +1,172 @@
+name: GCP CD
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: banking-intel-nz-dev-sz260808
+  GCP_REGION: australia-southeast1
+  GCP_REPOSITORY: banking-intelligence
+  GCP_REGISTRY: australia-southeast1-docker.pkg.dev
+  GCP_WORKLOAD_IDENTITY_PROVIDER: projects/371276085918/locations/global/workloadIdentityPools/github-actions/providers/github-main
+  GCP_SERVICE_ACCOUNT: banking-cd-dev@banking-intel-nz-dev-sz260808.iam.gserviceaccount.com
+  API_SERVICE: banking-intelligence-api-dev
+  MIGRATION_JOB: banking-migrations-dev
+  ETL_JOB: banking-etl-dev
+
+concurrency:
+  group: gcp-cd-development
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to GCP development
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out tested revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Resolve deployment version
+        id: version
+        shell: bash
+        run: |
+          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to GCP with OIDC
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Verify active GCP identity
+        shell: bash
+        run: |
+          active_account="$(gcloud auth list \
+            --filter=status:ACTIVE \
+            --format='value(account)')"
+
+          active_project="$(gcloud config get-value project)"
+
+          test "$active_account" = "$GCP_SERVICE_ACCOUNT"
+          test "$active_project" = "$GCP_PROJECT_ID"
+
+          echo "Authenticated to GCP with Workload Identity Federation."
+
+      - name: Configure Docker authentication
+        shell: bash
+        run: |
+          gcloud auth configure-docker "$GCP_REGISTRY" --quiet
+
+      - name: Build and push API image
+        id: api_image
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ steps.version.outputs.image_tag }}
+        run: |
+          api_image="$GCP_REGISTRY/$GCP_PROJECT_ID/$GCP_REPOSITORY/banking-intelligence-api:$IMAGE_TAG"
+
+          docker build \
+            --file Dockerfile \
+            --tag "$api_image" \
+            .
+
+          docker push "$api_image"
+          echo "uri=$api_image" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push ETL image
+        id: etl_image
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ steps.version.outputs.image_tag }}
+        run: |
+          etl_image="$GCP_REGISTRY/$GCP_PROJECT_ID/$GCP_REPOSITORY/banking-intelligence-etl:$IMAGE_TAG"
+
+          docker build \
+            --file Dockerfile.etl \
+            --tag "$etl_image" \
+            .
+
+          docker push "$etl_image"
+          echo "uri=$etl_image" >> "$GITHUB_OUTPUT"
+
+      - name: Update migration Job
+        shell: bash
+        run: |
+          gcloud run jobs update "$MIGRATION_JOB" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --image="${{ steps.api_image.outputs.uri }}" \
+            --quiet
+
+      - name: Apply database migrations
+        shell: bash
+        run: |
+          gcloud run jobs execute "$MIGRATION_JOB" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --wait
+
+      - name: Deploy API image
+        shell: bash
+        run: |
+          gcloud run services update "$API_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --image="${{ steps.api_image.outputs.uri }}" \
+            --quiet
+
+      - name: Deploy ETL image
+        shell: bash
+        run: |
+          gcloud run jobs update "$ETL_JOB" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --image="${{ steps.etl_image.outputs.uri }}" \
+            --quiet
+
+      - name: Verify deployed API
+        shell: bash
+        run: |
+          api_url="$(gcloud run services describe "$API_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --format='value(status.url)')"
+
+          test -n "$api_url"
+
+          curl --fail --silent --show-error \
+            --retry 5 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            "$api_url/health"
+
+          curl --fail --silent --show-error \
+            --retry 5 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            "$api_url/ready"
