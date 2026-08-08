@@ -20,13 +20,26 @@ class Settings(BaseSettings):
     def database_url(self) -> URL:
         """Build the SQLAlchemy PostgreSQL connection URL."""
 
+        connection_values = {
+            "drivername": "postgresql+psycopg",
+            "username": self.postgres_user,
+            "password": self.postgres_password.get_secret_value(),
+            "database": self.postgres_db,
+        }
+
+        if self.postgres_host.startswith("/"):
+            return URL.create(
+                **connection_values,
+                query={
+                    "host": self.postgres_host,
+                    "port": str(self.postgres_port),
+                },
+            )
+
         return URL.create(
-            drivername="postgresql+psycopg",
-            username=self.postgres_user,
-            password=self.postgres_password.get_secret_value(),
+            **connection_values,
             host=self.postgres_host,
             port=self.postgres_port,
-            database=self.postgres_db,
         )
 
     postgres_db: str

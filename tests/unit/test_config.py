@@ -46,3 +46,31 @@ def test_database_url_contains_expected_components() -> None:
     assert database_url.host == "test_host"
     assert database_url.port == 6543
     assert database_url.database == "test_database"
+
+
+def test_database_url_supports_unix_socket_host() -> None:
+    """Database URL should support the Cloud SQL Unix socket directory."""
+
+    socket_host = (
+        "/cloudsql/"
+        "banking-intel-nz-dev-sz260808:"
+        "australia-southeast1:"
+        "banking-intelligence-pg-dev"
+    )
+    settings = Settings(
+        _env_file=None,
+        postgres_db="test_database",
+        postgres_user="test_user",
+        postgres_password="test_password",
+        postgres_host=socket_host,
+        postgres_port=5432,
+        platform_api_key="test-platform-api-key",
+    )
+
+    database_url = settings.database_url
+
+    assert database_url.host is None
+    assert database_url.port is None
+    assert database_url.query["host"] == socket_host
+    assert database_url.query["port"] == "5432"
+    assert "@[" not in database_url.render_as_string(hide_password=False)
