@@ -11,7 +11,7 @@ This project uses a hybrid deployment model:
 - Azure Container Registry (ACR) stores versioned Docker images.
 - GitHub Actions currently provides CI; automated cloud deployment (CD) is still pending.
 - Airflow remains in local Docker Compose as an orchestration demonstration.
-- A future cloud scheduler will trigger the cloud ETL workflow without hosting the full Airflow stack in Azure.
+- An Azure Container Apps scheduled Job runs the cloud ETL workflow without hosting the full Airflow stack in Azure.
 
 This approach demonstrates cloud deployment while controlling portfolio-project cost and operational complexity.
 
@@ -36,7 +36,8 @@ Azure Container Registry
        |
        v
 Azure Container Apps
-  public FastAPI API
+  - public FastAPI API
+  - scheduled ETL Job
        |
        v
 Azure PostgreSQL Flexible Server
@@ -60,11 +61,14 @@ Local Docker Compose
 | Database schema migrations | Alembic head `d22ee119ffee` | Applied |
 | Container Apps environment | `cae-banking-intelligence-dev` | Complete |
 | Managed identity | `id-banking-intelligence-api-dev` | Complete |
+| CD Entra application | `app-banking-intelligence-cd-dev` | Created; RBAC and GitHub federation complete |
+| GitHub Actions Azure IDs | Client, tenant, and subscription IDs | Explicit non-secret workflow configuration |
 | ACR permission | `AcrPull` on the registry | Assigned |
 | Container App | `ca-banking-intelligence-api-dev` | Created |
 | Public endpoint verification | Health, readiness, authenticated query, and logs | Complete |
 | Automated CD | GitHub Actions deployment workflow | Pending |
-| Cloud ETL schedule | Container Apps Job or scheduled workflow | Pending |
+| Manual cloud ETL Job | `job-banking-etl-dev` | Complete and idempotency-tested |
+| Scheduled cloud ETL Job | `job-banking-etl-scheduled-dev` | Complete; daily at `0 14 * * *` UTC |
 
 Registered Azure providers include:
 
@@ -233,7 +237,13 @@ The core bootstrap function was implemented on 2026-08-08 in `banking_intelligen
 
 The dbt runtime was also moved from the general `dev` dependency group into a dedicated `etl` group. This allows the future job image to install the application plus dbt without including pytest, Ruff, or other development-only tools. Refreshing `uv.lock` changed only the dependency-group assignment and did not upgrade resolved packages.
 
-A dedicated `banking-intelligence-demo-job` entry point and `Dockerfile.etl` are now implemented locally. The entry point composes the existing bootstrap, CSV ingestion, high-amount risk, and dbt build stages in fail-fast order. Unit tests verify the order and propagation of the bootstrapped source-system and risk-rule IDs. The Dockerfile installs the application with only the `etl` dependency group and copies the dbt warehouse plus deterministic demo CSV. On 2026-08-08, the local image build completed successfully as `banking-intelligence-etl:dev`. A no-database smoke inspection confirmed the installed job entry point, dbt Core 1.12.0, dbt-postgres 1.11.0, the warehouse project, the demo CSV, and execution as the non-root `app` user. The image has not yet been assigned a Git SHA tag, pushed to ACR, or deployed as a Container Apps Job.
+A dedicated `banking-intelligence-demo-job` entry point and `Dockerfile.etl` are now implemented locally. The entry point composes the existing bootstrap, CSV ingestion, high-amount risk, and dbt build stages in fail-fast order. Unit tests verify the order and propagation of the bootstrapped source-system and risk-rule IDs. The Dockerfile installs the application with only the `etl` dependency group and copies the dbt warehouse plus deterministic demo CSV. On 2026-08-08, the local image build completed successfully as `banking-intelligence-etl:dev`. A no-database smoke inspection confirmed the installed job entry point, dbt Core 1.12.0, dbt-postgres 1.11.0, the warehouse project, the demo CSV, and execution as the non-root `app` user. The ETL implementation was committed as Git revision `2212fc4`, and the same local image was tagged as `bankingintelligencenzdev.azurecr.io/banking-intelligence-etl:2212fc4`. The ACR-formatted tag establishes source-to-image traceability and tells Docker which registry and repository will receive the image; it does not duplicate the underlying local image layers. Local Docker authentication to `bankingintelligencenzdev` then completed successfully with `az acr login`. The ETL image was pushed successfully with digest `sha256:a2d69824c47dedc709ff8b59807b295cc83c8cdbac87e25088a4b0e6124a375f`; ACR reused shared layers already stored for the API image and uploaded the ETL-specific layers. An independent ACR tag query confirmed tag `2212fc4`, the same digest, and its registry creation timestamp. The existing user-assigned managed identity resource ID was retrieved into the local deployment session for reuse by the Job; the subscription-bearing ID is intentionally not recorded here. An Azure RBAC query confirmed that this identity still has `AcrPull` scoped to the registry. The API resource's non-secret PostgreSQL settings were then loaded into the local deployment session: the Azure PostgreSQL hostname, port 5432, database `banking_intelligence`, and application user `banking_admin`. Secret values were transferred directly into local variables without being displayed. The Manual Container Apps Job `job-banking-etl-dev` was created successfully with the ETL image, user-assigned identity, ACR managed-identity authentication, database configuration, and Job-scoped secret references. The local secret variables were cleared after creation. A read-only preflight confirmed Manual trigger mode, image tag `2212fc4`, 0.5 CPU, 1 GiB memory, 1,800-second timeout, retry limit 1, parallelism 1, completion count 1, user-assigned identity, managed-identity registry access, and both secret references. Azure accepted the first manual execution as `job-banking-etl-dev-vi9qprx`; its successful result is recorded below.
+
+The first execution status was subsequently verified as `Succeeded`. It ran from approximately 00:54:48 UTC to 00:55:45 UTC, a duration of about 57 seconds. A direct `az containerapp job logs show` attempt installed the preview CLI extension but returned `No replicas found for execution` because the completed Job replica had already been cleaned up. This did not indicate a Job failure; the persistent logs were retrieved from the environment's Log Analytics workspace instead. They confirmed 54 successful dbt checks with zero warnings or errors, comprising three table models, two view models, and 49 data tests. The final Job summary reported ETL run ID 1, risk rule ID 1, three evaluated transactions, three inserted risk results, and one inserted alert. Public API verification then confirmed three transactions, one risk alert, and two daily analytics summary rows. This completed the first end-to-end cloud ETL validation. A second manual execution, `job-banking-etl-dev-k7johlt`, then completed with status `Succeeded` from approximately 01:11:43 UTC to 01:12:37 UTC, a duration of about 54 seconds. Its persistent logs again reported 54 passing dbt checks with zero warnings or errors. ETL run ID advanced to 2 while risk rule ID remained 1; all three transactions were evaluated, but zero new risk results and zero new alerts were inserted. Public API totals remained at three transactions, one alert, and two daily summary rows. This completed the end-to-end idempotency validation, so the Job is ready for a schedule.
+
+The Scheduled Container Apps Job `job-banking-etl-scheduled-dev` was then created successfully from the same immutable ETL image, `banking-intelligence-etl:2212fc4`. It reuses the user-assigned managed identity for ACR access and has its own Job-scoped references to the PostgreSQL password and platform API key. Its cron expression is `0 14 * * *`, so Azure starts it daily at 14:00 UTC. This corresponds to approximately 02:00 in Auckland during NZST and 03:00 during NZDT; accepting this daylight-saving shift keeps the schedule simple and UTC-based. The already-tested Manual Job remains available for smoke tests and controlled backfills.
+
+The core GitHub Actions CD workflow is now implemented in `.github/workflows/cd.yml`. It waits for a successful `CI` run on `main` (or a manual dispatch), checks out the tested revision, derives a Git-SHA image tag, authenticates with Azure OIDC, builds and pushes the API and ETL images, and updates the existing API Container App plus both ETL Jobs. It intentionally does not start either Job or recreate their trigger configuration. The initial user-assigned CD identity repeatedly returned `AADSTS700213` even after its issuer, immutable GitHub subject, audience, tenant, and client ID were verified. The deployment principal was therefore replaced with the dedicated Microsoft Entra application `app-banking-intelligence-cd-dev`, following the standard GitHub-to-Azure workload identity pattern. No client secret was created. Its service principal has `AcrPush` on the registry plus `Container Apps Contributor` and `Container Apps Jobs Contributor` at the project resource-group scope. The `github-main-immutable` federated credential trusts only OIDC tokens issued for this repository's `main` branch and the Azure token-exchange audience. The client, tenant, and subscription IDs are non-secret identifiers stored explicitly in the workflow; authentication still requires GitHub's short-lived signed OIDC token. The first CD run with the new application remains pending after Azure federation propagation.
 
 ## 5. Difficulties encountered and what they taught
 
@@ -296,9 +306,17 @@ The DAG task failed Pydantic settings validation because `PLATFORM_API_KEY` was 
 
 Lesson: a value present in the host `.env` is not automatically available inside every container; it must be mapped into the service environment.
 
+### The initial CD managed identity did not match GitHub OIDC tokens
+
+GitHub issued the expected immutable `main`-branch subject, and Azure displayed an identical federated credential on the user-assigned managed identity, but token exchange continued to return `AADSTS700213`. Re-entering GitHub identifiers and recreating the managed-identity credential did not resolve the mismatch.
+
+Workaround: use a dedicated Microsoft Entra application and service principal with the same exact GitHub issuer, immutable subject, and audience. The identifiers are safe to store as workflow configuration because they do not authenticate by themselves; GitHub must still mint a valid short-lived OIDC token.
+
+Lesson: OIDC failures should be isolated across the token claims, selected client ID, Azure federation object, and control-plane propagation. Avoid repeatedly changing already-verified claims, and keep the deployment principal separate from runtime identities.
+
 ## 6. Security and cost actions still required
 
-- Rotate the exposed/weak PostgreSQL administrator password immediately.
+- Rotate the previously exposed PostgreSQL administrator password when the explicitly deferred security task is resumed.
 - Update the Container App database-password secret after rotation.
 - Confirm that `.env` is ignored and contains no committed secrets.
 - Keep API keys and database passwords in Azure secrets or GitHub Actions secrets.
@@ -312,10 +330,9 @@ Lesson: a value present in the host `.env` is not automatically available inside
 
 ### Required to finish the portfolio deployment
 
-1. Include and run the completed demo-configuration bootstrap command in the cloud ETL job image.
-2. Create the cloud ETL execution path with an Azure Container Apps Job.
-3. Add GitHub Actions CD using Azure workload identity federation rather than a long-lived Azure password.
-4. Add deployment and rollback instructions to the main README.
+1. Commit the CD workflow and complete the first successful `CI -> CD` run.
+2. Add deployment and rollback instructions to the main README.
+3. Perform final end-to-end acceptance and clean up Azure resources when the demo is no longer needed.
 
 The PostgreSQL administrator password rotation remains a known security action but was explicitly deferred on 2026-08-08. It must be completed before treating the environment as production-like or sharing further terminal screenshots.
 
@@ -343,4 +360,4 @@ The PostgreSQL administrator password rotation remains a known security action b
 
 ## 9. Resume point
 
-Public Container App validation is complete. Do not recreate existing resources. PostgreSQL password rotation is explicitly deferred but remains documented as a security action. The cloud database currently has no source-system or risk-rule configuration. The idempotent `bootstrap-demo-config` CLI is complete locally but is not present in the deployed API image. The next implementation task is to build and locally verify the dedicated Container Apps Job image containing this command, dbt, the warehouse project, and the deterministic demo CSV.
+The public FastAPI deployment and cloud ETL path are complete. The Manual Job succeeded twice and demonstrated end-to-end idempotency; the Scheduled Job now runs daily at 14:00 UTC. Do not recreate these resources. The core CD workflow, dedicated Entra application, Azure RBAC roles, GitHub immutable `main` federation, and non-secret Azure identifiers are configured. The next step is completing the first successful `CI -> CD` run after federation propagation. PostgreSQL password rotation is explicitly deferred but remains documented as a security action.
