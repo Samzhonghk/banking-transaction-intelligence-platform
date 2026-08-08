@@ -53,7 +53,7 @@ jobs:
         run: uv python install
 
       - name: Install dependencies
-        run: uv sync --locked --dev
+        run: uv sync --locked --dev --group etl
 
       - name: Run Ruff lint
         run: uv run ruff check .
