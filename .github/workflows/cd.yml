@@ -1,0 +1,111 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+
+env:
+  RESOURCE_GROUP: rg-banking-intelligence-dev
+  ACR_NAME: bankingintelligencenzdev
+  ACR_LOGIN_SERVER: bankingintelligencenzdev.azurecr.io
+  API_APP_NAME: ca-banking-intelligence-api-dev
+  MANUAL_ETL_JOB_NAME: job-banking-etl-dev
+  SCHEDULED_ETL_JOB_NAME: job-banking-etl-scheduled-dev
+
+jobs:
+  deploy:
+    name: Deploy to Azure development
+    if: >-
+      github.event_name =='workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Check out tested revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Resolve deployment version
+        id: version
+        run: |
+          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID}}
+
+      - name: Log in to Azure Container Registry
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Build and push API image
+        id: api_image
+        env:
+          IMAGE_TAG: ${{ steps.version.outputs.image_tag }}
+        run: |
+          api_image="$ACR_LOGIN_SERVER/banking-intelligence-api:$IMAGE_TAG"
+
+          docker build \
+            --file Dockerfile \
+            --tag "$api_image" \
+            .
+
+          docker push "$api_image"
+          echo "uri=$api_image" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push ETL image
+        id: etl_image
+        env:
+          IMAGE_TAG: ${{ steps.version.outputs.image_tag }}
+        run: |
+          etl_image="$ACR_LOGIN_SERVER/banking-intelligence-etl:$IMAGE_TAG"
+
+          docker build \
+            --file Dockerfile.etl \
+            --tag "$etl_image" \
+            .
+
+          docker push "$etl_image"
+          echo "uri=$etl_image" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy API image
+        run: |
+          az extension add \
+            --name containerapp \
+            --upgrade
+
+          az containerapp update \
+            --name "$API_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${{ steps.api_image.outputs.uri }}" \
+            --output none
+
+      - name: Deploy ETL image
+        run: |
+          az containerapp job update \
+            --name "$MANUAL_ETL_JOB_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${{ steps.etl_image.outputs.uri }}" \
+            --output none
+
+          az containerapp job update \
+            --name "$SCHEDULED_ETL_JOB_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${{ steps.etl_image.outputs.uri }}" \
+            --output none

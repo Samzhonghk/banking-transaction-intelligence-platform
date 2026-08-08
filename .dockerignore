@@ -9,6 +9,9 @@
 .ruff_cache
 **/__pycache__
 **/*.py[cod]
+.pytest_cache/
+.pytest_tmp/
+.pytest-run-current/
 
 data/generated
 docs
